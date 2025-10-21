@@ -1,0 +1,17 @@
+# /etc/systemd/system/APP_SERVICE_NAME.service
+[Unit]
+Description=APP_SERVICE_NAME (Uvicorn/FastAPI)
+After=network.target
+
+[Service]
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/opt/myapi/current
+EnvironmentFile=/opt/myapi/current/.env
+ExecStart=/opt/myapi/current/venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2
+Restart=always
+RestartSec=5
+TimeoutStopSec=15
+
+[Install]
+WantedBy=multi-user.target
