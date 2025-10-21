@@ -1,6 +1,7 @@
 # EC2 Deploy Pack (GitHub Actions)
 
-This pack wires your GitHub repo to auto-deploy to an AWS EC2 instance.
+This pack wires your GitHub repo to auto-deploy to an AWS EC2 instance
+
 
 ## 1) Add these files to your repo
 - `.github/workflows/deploy-ec2.yml`
