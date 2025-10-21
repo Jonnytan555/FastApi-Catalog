@@ -2,20 +2,15 @@ name: Deploy to EC2
 
 on:
   push:
-    branches: [ "main" ]
+    branches:
+      - main
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
-    env:
-      EC2_HOST: ${{ secrets.EC2_HOST }}
-      EC2_USER: ${{ secrets.EC2_USER }}
-      APP_DIR:  ${{ secrets.EC2_APP_DIR }}
-      SERVICE:  ${{ secrets.APP_SERVICE_NAME }}
-
     steps:
-      - name: Checkout
+      - name: Checkout repo
         uses: actions/checkout@v4
 
       - name: Start SSH agent and add key
@@ -26,38 +21,12 @@ jobs:
       - name: Add EC2 to known_hosts
         run: |
           mkdir -p ~/.ssh
-          ssh-keyscan -H "$EC2_HOST" >> ~/.ssh/known_hosts
+          ssh-keyscan -H "${{ secrets.EC2_HOST }}" >> ~/.ssh/known_hosts
 
-      - name: Rsync repo to EC2 release dir
+      - name: Rsync repo to EC2
         run: |
-          RSYNC_EXCLUDES="--exclude .git --exclude .github --exclude tests --exclude __pycache__ --exclude .venv --exclude venv"
-          RELEASE_DIR="$APP_DIR/releases/${GITHUB_SHA}"
-          rsync -az --delete $RSYNC_EXCLUDES -e "ssh" ./ "$EC2_USER@$EC2_HOST:$RELEASE_DIR/"
+          rsync -avz --delete ./ ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:${{ secrets.EC2_APP_DIR }}/releases/latest
 
-      - name: Activate release, install deps, restart service
+      - name: Restart FastAPI service
         run: |
-          ssh "$EC2_USER@$EC2_HOST" bash -lc '
-            set -e
-            APP_DIR="'$APP_DIR'"
-            RELEASE_DIR="$APP_DIR/releases/'$GITHUB_SHA'"
-            CURRENT="$APP_DIR/current"
-
-            if [ ! -d "$RELEASE_DIR/venv" ]; then
-              python3 -m venv "$RELEASE_DIR/venv"
-            fi
-            "$RELEASE_DIR/venv/bin/pip" install -U pip wheel
-            if [ -f "$RELEASE_DIR/requirements.txt" ]; then
-              "$RELEASE_DIR/venv/bin/pip" install -r "$RELEASE_DIR/requirements.txt"
-            fi
-
-            # Optional: copy env file once, or keep a shared one at APP_DIR/.env
-            if [ -f "$APP_DIR/.env" ]; then
-              cp "$APP_DIR/.env" "$RELEASE_DIR/.env"
-            fi
-
-            ln -sfn "$RELEASE_DIR" "$CURRENT"
-
-            sudo systemctl daemon-reload
-            sudo systemctl restart "'$SERVICE'"
-            sudo systemctl --no-pager -l status "'$SERVICE'" || true
-          '
+          ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "sudo systemctl restart ${APP_SERVICE_NAME}.service || echo 'Service not found; continuing...'"
