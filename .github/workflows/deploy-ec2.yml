@@ -28,4 +28,26 @@ jobs:
 
       - name: Add EC2 to known_hosts
         run: |
-          mkdir -p ~/.
+          mkdir -p ~/.ssh
+          ssh-keyscan -T 15 "$EC2_HOST" >> ~/.ssh/known_hosts
+
+      - name: Test SSH connection
+        run: |
+          ssh -o StrictHostKeyChecking=yes "$EC2_USER@$EC2_HOST" \
+            "echo '✅ Connected to EC2:' $(hostname)"
+
+      - name: Ensure target directory exists
+        run: |
+          ssh -o StrictHostKeyChecking=yes "$EC2_USER@$EC2_HOST" \
+            "mkdir -p '$EC2_APP_DIR/releases/latest'"
+
+      - name: Rsync repo to EC2
+        run: |
+          rsync -avz --delete \
+            -e "ssh -o StrictHostKeyChecking=yes -o ConnectTimeout=30" \
+            ./ "$EC2_USER@$EC2_HOST:$EC2_APP_DIR/releases/latest"
+
+      - name: Restart FastAPI service
+        run: |
+          ssh -o StrictHostKeyChecking=yes "$EC2_USER@$EC2_HOST" \
+            "sudo systemctl restart '${APP_SERVICE_NAME}.service' || echo 'Service not found; continuing...'"
