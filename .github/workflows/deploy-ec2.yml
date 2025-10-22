@@ -2,12 +2,16 @@ name: Deploy to EC2
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    env:
+      EC2_HOST: ${{ secrets.EC2_HOST }}        # e.g. ec2-18-xx-xx-xx.eu-west-1.compute.amazonaws.com
+      EC2_USER: ${{ secrets.EC2_USER }}        # e.g. ubuntu
+      EC2_APP_DIR: ${{ secrets.EC2_APP_DIR }}  # e.g. /var/www/myapp
+      APP_SERVICE_NAME: my-fastapi             # set this or move to secrets/vars
 
     steps:
       - name: Checkout repo
@@ -18,15 +22,29 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.EC2_SSH_KEY }}
 
+      - name: Preflight — resolve host
+        run: |
+          getent ahosts "$EC2_HOST" || (echo "Host is not resolvable from runner"; exit 1)
+
       - name: Add EC2 to known_hosts
         run: |
           mkdir -p ~/.ssh
-          ssh-keyscan -H "${{ secrets.EC2_HOST }}" >> ~/.ssh/known_hosts
+          # Try twice in case the instance is still warming up
+          ssh-keyscan -T 15 -p 22 "$EC2_HOST" >> ~/.ssh/known_hosts 2>/dev/null || \
+          (sleep 5 && ssh-keyscan -T 15 -p 22 "$EC2_HOST" >> ~/.ssh/known_hosts 2>/dev/null)
+
+      - name: Ensure target directory exists
+        run: |
+          ssh -o StrictHostKeyChecking=yes -o ConnectTimeout=15 "$EC2_USER@$EC2_HOST" \
+            "mkdir -p '$EC2_APP_DIR/releases/latest'"
 
       - name: Rsync repo to EC2
         run: |
-          rsync -avz --delete ./ ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:${{ secrets.EC2_APP_DIR }}/releases/latest
+          rsync -avz --delete \
+            -e "ssh -o StrictHostKeyChecking=yes -o ConnectTimeout=30" \
+            ./ "$EC2_USER@$EC2_HOST:$EC2_APP_DIR/releases/latest"
 
       - name: Restart FastAPI service
         run: |
-          ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "sudo systemctl restart ${APP_SERVICE_NAME}.service || echo 'Service not found; continuing...'"
+          ssh -o StrictHostKeyChecking=yes -o ConnectTimeout=15 "$EC2_USER@$EC2_HOST" \
+            "sudo systemctl restart '${APP_SERVICE_NAME}.service' || echo 'Service not found; continuing...'"
