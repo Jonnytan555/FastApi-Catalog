@@ -9,10 +9,10 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      EC2_HOST: ec2-16-16-92-145.eu-north-1.compute.amazonaws.com
-      EC2_USER: ubuntu
-      EC2_APP_DIR: /home/ubuntu/myapp
-      APP_SERVICE_NAME: my-fastapi
+      EC2_HOST: ${{ secrets.EC2_HOST }}
+      EC2_USER: ${{ secrets.EC2_USER }}
+      EC2_APP_DIR: ${{ secrets.EC2_APP_DIR }}
+      APP_SERVICE_NAME: ${{ secrets.APP_SERVICE_NAME }}
 
     steps:
       - name: Checkout repo
@@ -23,31 +23,36 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.EC2_SSH_KEY }}
 
-      - name: DNS preflight
-        run: getent ahosts "$EC2_HOST"
-
+      # Clean up any stray whitespace/CRLF in the host from the secret
+      - name: Normalize EC2_HOST and DNS preflight
+        id: host
+        run: |
+          CLEAN=$(printf '%s' "$EC2_HOST" | tr -d '\r' | xargs)
+          echo "host=$CLEAN" >> $GITHUB_OUTPUT
+          getent ahosts "$CLEAN"
+      
       - name: Add EC2 to known_hosts
         run: |
           mkdir -p ~/.ssh
-          ssh-keyscan -T 15 "$EC2_HOST" >> ~/.ssh/known_hosts
+          ssh-keyscan -T 15 "${{ steps.host.outputs.host }}" >> ~/.ssh/known_hosts
 
       - name: Test SSH connection
         run: |
-          ssh -o StrictHostKeyChecking=yes "$EC2_USER@$EC2_HOST" \
-            "echo '✅ Connected to EC2:' $(hostname)"
+          ssh -o StrictHostKeyChecking=yes "${EC2_USER}@${{ steps.host.outputs.host }}" \
+            "echo '✅ Connected to:' $(hostname)"
 
       - name: Ensure target directory exists
         run: |
-          ssh -o StrictHostKeyChecking=yes "$EC2_USER@$EC2_HOST" \
-            "mkdir -p '$EC2_APP_DIR/releases/latest'"
+          ssh -o StrictHostKeyChecking=yes "${EC2_USER}@${{ steps.host.outputs.host }}" \
+            "mkdir -p '${EC2_APP_DIR}/releases/latest'"
 
       - name: Rsync repo to EC2
         run: |
           rsync -avz --delete \
             -e "ssh -o StrictHostKeyChecking=yes -o ConnectTimeout=30" \
-            ./ "$EC2_USER@$EC2_HOST:$EC2_APP_DIR/releases/latest"
+            ./ "${EC2_USER}@${{ steps.host.outputs.host }}:${EC2_APP_DIR}/releases/latest"
 
       - name: Restart FastAPI service
         run: |
-          ssh -o StrictHostKeyChecking=yes "$EC2_USER@$EC2_HOST" \
+          ssh -o StrictHostKeyChecking=yes "${EC2_USER}@${{ steps.host.outputs.host }}" \
             "sudo systemctl restart '${APP_SERVICE_NAME}.service' || echo 'Service not found; continuing...'"
