@@ -11,7 +11,7 @@ jobs:
     env:
       EC2_HOST: ec2-16-16-92-145.eu-north-1.compute.amazonaws.com
       EC2_USER: ubuntu
-      EC2_APP_DIR: /var/www/myapp
+      EC2_APP_DIR: /home/ubuntu/myapp
       APP_SERVICE_NAME: my-fastapi
 
     steps:
