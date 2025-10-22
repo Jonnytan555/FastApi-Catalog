@@ -1,13 +1,31 @@
-env:
-  EC2_HOST: ec2-16-16-92-145.eu-north-1.compute.amazonaws.com
-  EC2_USER: ubuntu
-  EC2_APP_DIR: /var/www/myapp
+name: Deploy to EC2
 
-steps:
-  - uses: actions/checkout@v4
-  - uses: webfactory/ssh-agent@v0.9.0
-    with:
-      ssh-private-key: ${{ secrets.EC2_SSH_KEY }}
+on:
+  push:
+    branches: [ main ]
 
-  - name: DNS preflight
-    run: getent ahosts "$EC2_HOST"
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    env:
+      EC2_HOST: ec2-16-16-92-145.eu-north-1.compute.amazonaws.com
+      EC2_USER: ubuntu
+      EC2_APP_DIR: /var/www/myapp
+      APP_SERVICE_NAME: my-fastapi
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Start SSH agent and add key
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.EC2_SSH_KEY }}
+
+      - name: DNS preflight
+        run: getent ahosts "$EC2_HOST"
+
+      - name: Add EC2 to known_hosts
+        run: |
+          mkdir -p ~/.
